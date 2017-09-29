@@ -8,6 +8,13 @@ local pageStatus =
     displayMenu = 5,
 }
 
+local persistence =
+{
+    notApplied,
+    pending,
+    applied
+}
+
 local uiMsp = 
 {
     reboot = 68,
@@ -15,6 +22,7 @@ local uiMsp =
 }
 
 local currentState = pageStatus.display
+local persistenceState = persistence.notApplied
 local requestTimeout = 80 -- 800ms request timeout
 local currentPage = 1
 local currentLine = 1
@@ -262,6 +270,16 @@ local function drawMenu()
     end
 end
 
+function loadPageFile(idx)
+    if idx <= #(PageFiles) then
+        Page = assert(loadScript(radio.templateHome .. PageFiles[idx]))()
+    end
+end
+
+function checkPersistence() 
+    persistenceState = persistence.applied
+end
+
 function run_ui(event)
     local now = getTime()
     -- if lastRunTS old than 500ms
@@ -337,29 +355,35 @@ function run_ui(event)
             incValue(-1)
         end
     end
-    if Page == nil then
-        Page = assert(loadScript(radio.templateHome .. PageFiles[currentPage]))()
-    end
-    if not Page.values and currentState == pageStatus.display then
-        requestPage()
-    end
-    lcd.clear()
-    if TEXT_BGCOLOR then
-        lcd.drawFilledRectangle(0, 0, LCD_W, LCD_H, TEXT_BGCOLOR)
-    end
-    drawScreen()
-    if protocol.rssi() == 0 then
-        lcd.drawText(NoTelem[1],NoTelem[2],NoTelem[3],NoTelem[4])
-    end
-    if currentState == pageStatus.displayMenu then
-        drawMenu()
-    elseif currentState == pageStatus.saving then
-        lcd.drawFilledRectangle(SaveBox.x,SaveBox.y,SaveBox.w,SaveBox.h,backgroundFill)
-        lcd.drawRectangle(SaveBox.x,SaveBox.y,SaveBox.w,SaveBox.h,SOLID)
-        lcd.drawText(SaveBox.x+SaveBox.x_offset,SaveBox.y+SaveBox.h_offset,"Saving...",DBLSIZE + BLINK + (globalTextOptions))
+
+    if persistenceState == persistence.applied then
+        if Page == nil then
+            loadPageFile(currentPage)
+        end
+        if not Page.values and currentState == pageStatus.display then
+            requestPage()
+        end
+        lcd.clear()
+        if TEXT_BGCOLOR then
+            lcd.drawFilledRectangle(0, 0, LCD_W, LCD_H, TEXT_BGCOLOR)
+        end
+        drawScreen()
+        if protocol.rssi() == 0 then
+            lcd.drawText(NoTelem[1],NoTelem[2],NoTelem[3],NoTelem[4])
+            if persistenceState == persistence.applied or persistenceState == persistence.pending then
+                persistenceState = persistence.notApplied
+            end
+        end
+        if currentState == pageStatus.displayMenu then
+            drawMenu()
+        elseif currentState == pageStatus.saving then
+            lcd.drawFilledRectangle(SaveBox.x,SaveBox.y,SaveBox.w,SaveBox.h,backgroundFill)
+            lcd.drawRectangle(SaveBox.x,SaveBox.y,SaveBox.w,SaveBox.h,SOLID)
+            lcd.drawText(SaveBox.x+SaveBox.x_offset,SaveBox.y+SaveBox.h_offset,"Saving...",DBLSIZE + BLINK + (globalTextOptions))
+        end
     end
     processMspReply(mspPollReply())
     return 0
 end
 
-return run_ui 
+return { run=run_ui, background=checkPersistence }
